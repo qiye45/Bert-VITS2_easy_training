@@ -1,0 +1,59 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="46">
+            <item index="0" class="java.lang.String" itemvalue="pydot" />
+            <item index="1" class="java.lang.String" itemvalue="expecttest" />
+            <item index="2" class="java.lang.String" itemvalue="joblib" />
+            <item index="3" class="java.lang.String" itemvalue="tabulate" />
+            <item index="4" class="java.lang.String" itemvalue="xmlrunner" />
+            <item index="5" class="java.lang.String" itemvalue="scikit_learn" />
+            <item index="6" class="java.lang.String" itemvalue="foo" />
+            <item index="7" class="java.lang.String" itemvalue="setuptools" />
+            <item index="8" class="java.lang.String" itemvalue="pynvml" />
+            <item index="9" class="java.lang.String" itemvalue="torcharrow" />
+            <item index="10" class="java.lang.String" itemvalue="torchvision" />
+            <item index="11" class="java.lang.String" itemvalue="Requests" />
+            <item index="12" class="java.lang.String" itemvalue="onnxruntime" />
+            <item index="13" class="java.lang.String" itemvalue="tensorflow" />
+            <item index="14" class="java.lang.String" itemvalue="filelock" />
+            <item index="15" class="java.lang.String" itemvalue="pymysql" />
+            <item index="16" class="java.lang.String" itemvalue="websocket_client" />
+            <item index="17" class="java.lang.String" itemvalue="PyQt5" />
+            <item index="18" class="java.lang.String" itemvalue="tenacity" />
+            <item index="19" class="java.lang.String" itemvalue="astunparse" />
+            <item index="20" class="java.lang.String" itemvalue="conda" />
+            <item index="21" class="java.lang.String" itemvalue="moviepy" />
+            <item index="22" class="java.lang.String" itemvalue="urllib3" />
+            <item index="23" class="java.lang.String" itemvalue="torchgen" />
+            <item index="24" class="java.lang.String" itemvalue="torchaudio" />
+            <item index="25" class="java.lang.String" itemvalue="coremltools" />
+            <item index="26" class="java.lang.String" itemvalue="Flask" />
+            <item index="27" class="java.lang.String" itemvalue="lazy_loader" />
+            <item index="28" class="java.lang.String" itemvalue="psyco" />
+            <item index="29" class="java.lang.String" itemvalue="transformers" />
+            <item index="30" class="java.lang.String" itemvalue="beartype" />
+            <item index="31" class="java.lang.String" itemvalue="pytest" />
+            <item index="32" class="java.lang.String" itemvalue="pytorch_lightning" />
+            <item index="33" class="java.lang.String" itemvalue="dill" />
+            <item index="34" class="java.lang.String" itemvalue="zhtools" />
+            <item index="35" class="java.lang.String" itemvalue="monkeytype" />
+            <item index="36" class="java.lang.String" itemvalue="pooch" />
+            <item index="37" class="java.lang.String" itemvalue="torch_xla" />
+            <item index="38" class="java.lang.String" itemvalue="intel_extension_for_pytorch" />
+            <item index="39" class="java.lang.String" itemvalue="flask_sqlalchemy" />
+            <item index="40" class="java.lang.String" itemvalue="pandas" />
+            <item index="41" class="java.lang.String" itemvalue="matplotlib" />
+            <item index="42" class="java.lang.String" itemvalue="typing_extensions" />
+            <item index="43" class="java.lang.String" itemvalue="z3" />
+            <item index="44" class="java.lang.String" itemvalue="hypothesis" />
+            <item index="45" class="java.lang.String" itemvalue="etcd" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
