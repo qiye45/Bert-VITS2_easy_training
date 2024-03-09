@@ -3,14 +3,63 @@ import glob
 import argparse
 import logging
 import json
+import shutil
 import subprocess
 import numpy as np
+from huggingface_hub import hf_hub_download
 from scipy.io.wavfile import read
 import torch
+import re
 
 MATPLOTLIB_FLAG = False
 
 logger = logging.getLogger(__name__)
+
+
+def download_emo_models(mirror, repo_id, model_name):
+    if mirror == "openi":
+        import openi
+
+        openi.model.download_model(
+            "Stardust_minus/Bert-VITS2",
+            repo_id.split("/")[-1],
+            "./emotional",
+        )
+    else:
+        hf_hub_download(
+            repo_id,
+            "pytorch_model.bin",
+            local_dir=model_name,
+            local_dir_use_symlinks=False,
+        )
+
+
+def download_checkpoint(
+    dir_path, repo_config, token=None, regex="G_*.pth", mirror="openi"
+):
+    repo_id = repo_config["repo_id"]
+    f_list = glob.glob(os.path.join(dir_path, regex))
+    if f_list:
+        print("Use existed model, skip downloading.")
+        return
+    if mirror.lower() == "openi":
+        import openi
+
+        kwargs = {"token": token} if token else {}
+        openi.login(**kwargs)
+
+        model_image = repo_config["model_image"]
+        openi.model.download_model(repo_id, model_image, dir_path)
+
+        fs = glob.glob(os.path.join(dir_path, model_image, "*.pth"))
+        for file in fs:
+            shutil.move(file, dir_path)
+        shutil.rmtree(os.path.join(dir_path, model_image))
+    else:
+        for file in ["DUR_0.pth", "D_0.pth", "G_0.pth"]:
+            hf_hub_download(
+                repo_id, file, local_dir=dir_path, local_dir_use_symlinks=False
+            )
 
 
 def load_checkpoint(checkpoint_path, model, optimizer=None, skip_optimizer=False):
@@ -252,7 +301,11 @@ def clean_checkpoints(path_to_models="logs/44k/", n_ckpts_to_keep=2, sort_by_tim
 
     to_del = [
         os.path.join(path_to_models, fn)
-        for fn in (x_sorted("G")[:-n_ckpts_to_keep] + x_sorted("D")[:-n_ckpts_to_keep])
+        for fn in (
+            x_sorted("G")[:-n_ckpts_to_keep]
+            + x_sorted("D")[:-n_ckpts_to_keep]
+            + x_sorted("WD")[:-n_ckpts_to_keep]
+        )
     ]
 
     def del_info(fn):
@@ -276,6 +329,7 @@ def get_hparams_from_dir(model_dir):
 
 
 def get_hparams_from_file(config_path):
+    # print("config_path: ", config_path)
     with open(config_path, "r", encoding="utf-8") as f:
         data = f.read()
     config = json.loads(data)
@@ -354,3 +408,54 @@ class HParams:
 
     def __repr__(self):
         return self.__dict__.__repr__()
+
+
+def load_model(model_path, config_path):
+    hps = get_hparams_from_file(config_path)
+    net = SynthesizerTrn(
+        # len(symbols),
+        108,
+        hps.data.filter_length // 2 + 1,
+        hps.train.segment_size // hps.data.hop_length,
+        n_speakers=hps.data.n_speakers,
+        **hps.model,
+    ).to("cpu")
+    _ = net.eval()
+    _ = load_checkpoint(model_path, net, None, skip_optimizer=True)
+    return net
+
+
+def mix_model(
+    network1, network2, output_path, voice_ratio=(0.5, 0.5), tone_ratio=(0.5, 0.5)
+):
+    if hasattr(network1, "module"):
+        state_dict1 = network1.module.state_dict()
+        state_dict2 = network2.module.state_dict()
+    else:
+        state_dict1 = network1.state_dict()
+        state_dict2 = network2.state_dict()
+    for k in state_dict1.keys():
+        if k not in state_dict2.keys():
+            continue
+        if "enc_p" in k:
+            state_dict1[k] = (
+                state_dict1[k].clone() * tone_ratio[0]
+                + state_dict2[k].clone() * tone_ratio[1]
+            )
+        else:
+            state_dict1[k] = (
+                state_dict1[k].clone() * voice_ratio[0]
+                + state_dict2[k].clone() * voice_ratio[1]
+            )
+    for k in state_dict2.keys():
+        if k not in state_dict1.keys():
+            state_dict1[k] = state_dict2[k].clone()
+    torch.save(
+        {"model": state_dict1, "iteration": 0, "optimizer": None, "learning_rate": 0},
+        output_path,
+    )
+
+
+def get_steps(model_path):
+    matches = re.findall(r"\d+", model_path)
+    return matches[-1] if matches else None

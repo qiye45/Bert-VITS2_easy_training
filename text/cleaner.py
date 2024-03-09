@@ -1,7 +1,7 @@
-from text import chinese, japanese, cleaned_text_to_sequence
+from text import chinese, cleaned_text_to_sequence
 
 
-language_module_map = {"ZH": chinese, "JP": japanese}
+language_module_map = {"ZH": chinese}
 
 
 def clean_text(text, language):
