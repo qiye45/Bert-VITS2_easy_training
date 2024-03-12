@@ -13,3 +13,10 @@ training_unit.transcribe_audio_files(
     in_dir=os.path.join('data',project_name, 'raws'),
     output_path=os.path.join('data', project_name, 'esd.list')
 )
+
+# 第三步：预处理标签文件
+
+# 第四步：生成 BERT 特征文件
+
+# 第五步：生成 CLAP 特征文件
+
