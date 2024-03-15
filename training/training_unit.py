@@ -2,11 +2,16 @@ import os
 import json
 import shutil
 from pathlib import Path
+
+import librosa
+import soundfile
 from funasr import AutoModel
 import torchaudio
 import argparse
 import torch
 import yaml
+from slicer2 import Slicer
+
 from config import config
 import sys
 import os
@@ -50,6 +55,48 @@ def generate_config(data_dir, batch_size):
     os.makedirs(wavs_path, exist_ok=True)
 
     return "配置文件生成完成"
+
+
+def split_audio(config_path, data_dir='./Data'):
+    """
+    加载配置文件，获取模型名称，读取相应的音频文件，并切片保存。
+
+    参数:
+    config_path: 配置文件的路径。
+    data_dir: 包含原始音频文件的数据目录，默认为'./Data'。
+    """
+    # 从配置文件加载配置
+    with open(config_path, mode="r", encoding="utf-8") as f:
+        configyml = yaml.load(f, Loader=yaml.FullLoader)
+    model_name = configyml["dataset_path"].replace("Data/", "")
+
+    # 加载音频文件
+    audio_path = f'{data_dir}/{model_name}/raw/{model_name}.wav'
+    audio, sr = librosa.load(audio_path, sr=None, mono=False)
+
+    # 实例化 Slicer 类并配置
+    slicer = Slicer(
+        sr=sr,
+        threshold=-40,
+        min_length=2000,
+        min_interval=300,
+        hop_size=10,
+        max_sil_kept=500
+    )
+
+    # 执行音频切片
+    chunks = slicer.slice(audio)
+
+    # 保存切片后的音频文件
+    for i, chunk in enumerate(chunks):
+        if len(chunk.shape) > 1:
+            chunk = chunk.T  # 音频是立体声需要交换轴
+        soundfile.write(f'{data_dir}/{model_name}/raw/{model_name}_{i}.wav', chunk, sr)
+
+    # 检查并删除原始音频文件
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+        print(f"已删除文件: {audio_path}")
 
 # 第二步：预处理音频文件
 def transcribe_audio_files(config_path, project_name, in_dir, output_path):
@@ -140,5 +187,8 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
                 f.write(line)
     else:
         print("警告：未找到任何可转写的音频文件。")
+
+
+
 
 
