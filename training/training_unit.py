@@ -193,15 +193,7 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
 
 
 
-# 假设这是一个文本清洗函数，你需要根据实际情况来实现它
-def clean_text(text, language):
-    # 这里应该是文本清洗的逻辑
-    # 返回清洗后的文本、音素、声调和词到音素的映射
-    cleaned_text = text  # 假设这是清洗后的文本
-    phones = []  # 音素列表
-    tones = []  # 声调列表
-    word2ph = []  # 词到音素的映射
-    return cleaned_text, phones, tones, word2ph
+
 
 # 数据预处理函数，用于生成训练集和验证集
 def preprocess_data(
@@ -214,6 +206,16 @@ def preprocess_data(
     max_val_total: int,
     clean: bool
 ):
+    # 假设这是一个文本清洗函数，你需要根据实际情况来实现它
+    def clean_text(text, language):
+        # 这里应该是文本清洗的逻辑
+        # 返回清洗后的文本、音素、声调和词到音素的映射
+        cleaned_text = text  # 假设这是清洗后的文本
+        phones = []  # 音素列表
+        tones = []  # 声调列表
+        word2ph = []  # 词到音素的映射
+        return cleaned_text, phones, tones, word2ph
+
     if cleaned_path == "" or cleaned_path is None:
         cleaned_path = transcription_path + ".cleaned"
 
