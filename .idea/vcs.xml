@@ -2,7 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/dependent_environment/FunASR" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/dependent_environment/modelscope" vcs="Git" />
   </component>
 </project>
