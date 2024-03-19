@@ -21,6 +21,11 @@ from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 from modelscope.hub.snapshot_download import snapshot_download
 
+
+# 音频切分
+
+
+
 # 第一步：生成配置文件
 def generate_config(data_dir, batch_size):
     def get_path(data_dir):
