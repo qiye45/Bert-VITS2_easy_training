@@ -12,8 +12,7 @@ import torchaudio
 import argparse
 import torch
 import yaml
-from slicer2 import Slicer
-
+from .slicer2 import Slicer
 from config import config
 import sys
 import os
