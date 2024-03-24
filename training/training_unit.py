@@ -16,12 +16,6 @@ from .slicer2 import Slicer
 from config import config
 import sys
 import os
-from modelscope.pipelines import pipeline
-from modelscope.utils.constant import Tasks
-from modelscope.hub.snapshot_download import snapshot_download
-
-
-# 音频切分
 
 
 
@@ -37,7 +31,7 @@ def generate_config(data_dir, batch_size):
 
     assert data_dir != "", "数据集名称不能为空"
     start_path, _, train_path, val_path, config_path = get_path(data_dir)
-    os.makedirs(start_path,exist_ok=True)
+    os.makedirs(start_path, exist_ok=True)
     if os.path.isfile(config_path):
         config = json.load(open(config_path, "r", encoding="utf-8"))
     else:
@@ -63,46 +57,60 @@ def generate_config(data_dir, batch_size):
     return "配置文件生成完成"
 
 
-def split_audio(config_path, data_dir='./Data'):
+# 音频切分 方案1
+def split_audios(config_path, data_dir):
     """
     加载配置文件，获取模型名称，读取相应的音频文件，并切片保存。
 
     参数:
     config_path: 配置文件的路径。
-    data_dir: 包含原始音频文件的数据目录，默认为'./Data'。
+    data_dir: 包含原始音频文件的数据目录，默认为'./data'。
     """
     # 从配置文件加载配置
     with open(config_path, mode="r", encoding="utf-8") as f:
         configyml = yaml.load(f, Loader=yaml.FullLoader)
-    model_name = configyml["dataset_path"].replace("Data/", "")
+    model_name = configyml["dataset_path"].replace("data/", "")
 
-    # 加载音频文件
-    audio_path = f'{data_dir}/{model_name}/raw/{model_name}.wav'
-    audio, sr = librosa.load(audio_path, sr=None, mono=False)
+    # 读取音频文件
+    for p in Path(data_dir).iterdir():
+        for s in p.rglob('*.wav'):
+            root = os.path.join(*s.parts[:-1])
+            filename = s.name
+            filename = filename[filename.rindex('.') + 1:]  # 去后缀
 
-    # 实例化 Slicer 类并配置
-    slicer = Slicer(
-        sr=sr,
-        threshold=-40,
-        min_length=2000,
-        min_interval=300,
-        hop_size=10,
-        max_sil_kept=500
-    )
+            # 构建完整的音频文件路径
+            audio_path = str(s)
+            audio, sr = librosa.load(audio_path, sr=None, mono=False)
+            # 实例化Slicer类，根据配置切割音频文件
+            slicer = Slicer(
+                sr=sr,
+                threshold=-40,
+                min_length=2000,
+                min_interval=300,
+                hop_size=10,
+                max_sil_kept=500
+            )
 
-    # 执行音频切片
-    chunks = slicer.slice(audio)
+            # 切片音频并保存切片
+            chunks = slicer.slice(audio)
+            # 确保输出目录存在
+            output_dir = root
 
-    # 保存切片后的音频文件
-    for i, chunk in enumerate(chunks):
-        if len(chunk.shape) > 1:
-            chunk = chunk.T  # 音频是立体声需要交换轴
-        soundfile.write(f'{data_dir}/{model_name}/raw/{model_name}_{i}.wav', chunk, sr)
+            # 保存切片后的音频文件
+            for i, chunk in enumerate(chunks):
+                # 如果音频是立体声，有多个通道，则转换为单一通道
+                if chunk.ndim > 1:
+                    chunk = chunk.T  # 交换轴来使音频文件为单通道（如果是立体声）
+                # 仅保存时长超过2秒的切片
+                if len(chunk) / sr > 2:
+                    soundfile.write(os.path.join(output_dir, f'{filename}_{i}.wav'), chunk, sr)
+                else:
+                    print(f"音频片段 {filename}_{i}.wav 时长低于2秒，已丢弃。")
+            # 删除原始音频文件
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+                print(f"原始音频文件 {audio_path} 已被删除。")
 
-    # 检查并删除原始音频文件
-    if os.path.exists(audio_path):
-        os.remove(audio_path)
-        print(f"已删除文件: {audio_path}")
 
 # 第二步：预处理音频文件
 def transcribe_audio_files(config_path, project_name, in_dir, output_path):
@@ -119,7 +127,9 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
     # 加载配置文件
     with open(config_path, mode="r", encoding="utf-8") as f:
         configyml = yaml.load(f, Loader=yaml.FullLoader)
-    model_name = configyml["dataset_path"].replace("Data/", "")
+    model_name = configyml["dataset_path"].replace("data/", "")
+    # 切分音频
+    split_audios(config_path, os.path.join('data', project_name))
 
     # 根据模型名称构建模型目录路径
     local_dir_root = "./models_from_modelscope"
@@ -154,10 +164,10 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
     processed_files = 0
 
     # 初始化转写结果列表
-    total_files=0
+    total_files = 0
     for p in Path(in_dir).iterdir():
         for s in p.rglob('*.wav'):
-            total_files+=1
+            total_files += 1
     speaker_annos = []
 
     # 迭代输入目录中的所有 wav 文件
@@ -171,7 +181,7 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
                 audio_path = os.path.join(root, filename)
                 # 进行语音识别
                 # rec_result = inference_pipeline(audio_in=audio_path, param_dict=param_dict)
-                rec_result=model.generate(input=audio_path)
+                rec_result = model.generate(input=audio_path)
                 # 获取识别文本和语种
                 lang, text = "zh", ''.join([i['text'] for i in rec_result])
                 if lang not in lang2token:
@@ -195,20 +205,17 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
         print("警告：未找到任何可转写的音频文件。")
 
 
+# 第三步：预处理标签文件, 数据预处理函数，用于生成训练集和验证集
 
-
-
-
-# 数据预处理函数，用于生成训练集和验证集
 def preprocess_data(
-    transcription_path: str,
-    cleaned_path: Optional[str],
-    train_path: str,
-    val_path: str,
-    config_path: str,
-    val_per_lang: int,
-    max_val_total: int,
-    clean: bool
+        transcription_path: str,
+        cleaned_path: Optional[str],
+        train_path: str,
+        val_path: str,
+        config_path: str,
+        val_per_lang: int,
+        max_val_total: int,
+        clean: bool
 ):
     # 假设这是一个文本清洗函数，你需要根据实际情况来实现它
     def clean_text(text, language):
@@ -286,19 +293,3 @@ def preprocess_data(
         json.dump(json_config, f, indent=2, ensure_ascii=False)
 
     print("训练集和验证集生成完成！")
-
-preprocess_data(
-    transcription_path="path/to/transcription",
-    cleaned_path=None,
-    train_path="path/to/train_set",
-    val_path="path/to/val_set",
-    config_path="path/to/config",
-    val_per_lang=100,
-    max_val_total=1000,
-    clean=True
-    )
-
-
-
-
-

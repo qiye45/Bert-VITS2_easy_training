@@ -15,7 +15,16 @@ training_unit.transcribe_audio_files(
 )
 
 # 第三步：预处理标签文件
-
+# training_unit.preprocess_data(
+#     transcription_path="path/to/transcription",
+#     cleaned_path=None,
+#     train_path="path/to/train_set",
+#     val_path="path/to/val_set",
+#     config_path="path/to/config",
+#     val_per_lang=100,
+#     max_val_total=1000,
+#     clean=True
+# )
 
 # 第四步：生成 BERT 特征文件
 
