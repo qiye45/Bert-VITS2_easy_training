@@ -149,7 +149,7 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
     inference_pipeline = pipeline(
         task=Tasks.auto_speech_recognition,
         model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
-        cache_dir=local_dir_root,model_revision="v2.0.4")
+        cache_dir=local_dir_root, model_revision="v2.0.4")
     param_dict = {'use_timestamp': False}
 
     # model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
