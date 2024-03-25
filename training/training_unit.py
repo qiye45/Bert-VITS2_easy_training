@@ -12,11 +12,12 @@ import torchaudio
 import argparse
 import torch
 import yaml
+from modelscope import pipeline, Tasks
+
 from .slicer2 import Slicer
 from config import config
 import sys
 import os
-
 
 
 # 第一步：生成配置文件
@@ -76,7 +77,7 @@ def split_audios(config_path, data_dir):
         for s in p.rglob('*.wav'):
             root = os.path.join(*s.parts[:-1])
             filename = s.name
-            filename = filename[filename.rindex('.') + 1:]  # 去后缀
+            filename = filename[:filename.rindex('.')]  # 去后缀
 
             # 构建完整的音频文件路径
             audio_path = str(s)
@@ -101,8 +102,8 @@ def split_audios(config_path, data_dir):
                 # 如果音频是立体声，有多个通道，则转换为单一通道
                 if chunk.ndim > 1:
                     chunk = chunk.T  # 交换轴来使音频文件为单通道（如果是立体声）
-                # 仅保存时长超过2秒的切片
-                if len(chunk) / sr > 2:
+                # 仅保存时长超过1秒的切片
+                if len(chunk) / sr > 1:
                     soundfile.write(os.path.join(output_dir, f'{filename}_{i}.wav'), chunk, sr)
                 else:
                     print(f"音频片段 {filename}_{i}.wav 时长低于2秒，已丢弃。")
@@ -129,7 +130,7 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
         configyml = yaml.load(f, Loader=yaml.FullLoader)
     model_name = configyml["dataset_path"].replace("data/", "")
     # 切分音频
-    split_audios(config_path, os.path.join('data', project_name))
+    # split_audios(config_path, os.path.join('data', project_name))
 
     # 根据模型名称构建模型目录路径
     local_dir_root = "./models_from_modelscope"
@@ -145,15 +146,20 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
     #     # lm_weight=0.15,
     #     # beam_size=10,
     # )
-    model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
-                      vad_model="fsmn-vad", vad_model_revision="v2.0.4",
-                      punc_model="ct-punc-c", punc_model_revision="v2.0.4",
-                      cache_dir=local_dir_root
-                      # spk_model="cam++", spk_model_revision="v2.0.2",
-                      )
+    inference_pipeline = pipeline(
+        task=Tasks.auto_speech_recognition,
+        model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
+        cache_dir=local_dir_root,model_revision="v2.0.4")
+    param_dict = {'use_timestamp': False}
+
+    # model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
+    #                   vad_model="fsmn-vad", vad_model_revision="v2.0.4",
+    #                   punc_model="ct-punc-c", punc_model_revision="v2.0.4",
+    #                   cache_dir=local_dir_root
+    #                   # spk_model="cam++", spk_model_revision="v2.0.2",
+    #                   )
 
     # 推理参数配置
-    param_dict = {'use_timestamp': False}
     lang2token = {
         'zh': "ZH|",
         'ja': "JP|",
@@ -175,15 +181,19 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
         for s in p.rglob('*.wav'):
             root = os.path.join(*s.parts[:-1])
             filename = s.name
-            speaker_name = s.parts[-1]
+            speaker_name = s.parts[-2]
             try:
                 # 构建完整的音频文件路径
                 audio_path = os.path.join(root, filename)
                 # 进行语音识别
-                # rec_result = inference_pipeline(audio_in=audio_path, param_dict=param_dict)
-                rec_result = model.generate(input=audio_path)
+                rec_result = inference_pipeline(input=audio_path, param_dict=param_dict)
+                lang, text = "zh", rec_result["text"]
+
+                # rec_result = model.generate(input=audio_path)
+                # lang, text = "zh", ''.join([i['text'] for i in rec_result])
+
                 # 获取识别文本和语种
-                lang, text = "zh", ''.join([i['text'] for i in rec_result])
+
                 if lang not in lang2token:
                     print(f"{lang} 语言不支持，忽略")
                     continue
