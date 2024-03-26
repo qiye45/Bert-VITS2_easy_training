@@ -9,15 +9,20 @@ import librosa
 import soundfile
 from funasr import AutoModel
 import torchaudio
-import argparse
-import torch
 import yaml
 from modelscope import pipeline, Tasks
-
+import torch
+from multiprocessing import Pool
+import commons
+import utils
+from tqdm import tqdm
+from text import cleaned_text_to_sequence, get_bert
+import argparse
+import torch.multiprocessing as mp
 from .slicer2 import Slicer
 from config import config
 import sys
-import os
+from text import chinese, cleaned_text_to_sequence
 
 
 # 第一步：生成配置文件
@@ -227,27 +232,24 @@ def preprocess_text(data_dir):
                 "\\", "/"
             )
             f.writelines(f"{path}|{spk}|{language}|{text}\n")
-    preprocess_text(lbl_path,train_path,val_path,config_path)
+    preprocess_data(lbl_path,train_path,val_path,config_path)
     print("标签文件预处理完成")
 def preprocess_data(
         transcription_path: str,
         train_path: str,
         val_path: str,
         config_path: str,
-        val_per_lang: int,
-        max_val_total: int,
-        clean: bool,
-        cleaned_path: Optional[str],
+        val_per_lang=4,
+        max_val_total=12,
+        clean=True,
+        cleaned_path='',
 ):
-    # 假设这是一个文本清洗函数，你需要根据实际情况来实现它
+
     def clean_text(text, language):
-        # 这里应该是文本清洗的逻辑
         # 返回清洗后的文本、音素、声调和词到音素的映射
-        cleaned_text = text  # 假设这是清洗后的文本
-        phones = []  # 音素列表
-        tones = []  # 声调列表
-        word2ph = []  # 词到音素的映射
-        return cleaned_text, phones, tones, word2ph
+        norm_text = chinese.text_normalize(text)
+        phones, tones, word2ph = chinese.g2p(norm_text)
+        return norm_text, phones, tones, word2ph
 
     if cleaned_path == "" or cleaned_path is None:
         cleaned_path = transcription_path + ".cleaned"
@@ -315,3 +317,51 @@ def preprocess_data(
         json.dump(json_config, f, indent=2, ensure_ascii=False)
 
     print("训练集和验证集生成完成！")
+
+
+# 第四步：生成 BERT 特征文件
+def bert_gen(data_dir):
+    assert data_dir != "", "数据集名称不能为空"
+    _, _, _, _, config_path = get_path(data_dir)
+
+    def process_line(x):
+        line, add_blank = x
+        device = config.bert_gen_config.device
+        if config.bert_gen_config.use_multi_device:
+            rank = mp.current_process()._identity
+            rank = rank[0] if len(rank) > 0 else 0
+            if torch.cuda.is_available():
+                gpu_id = rank % torch.cuda.device_count()
+                device = torch.device(f"cuda:{gpu_id}")
+            else:
+                device = torch.device("cpu")
+        wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
+        phone = phones.split(" ")
+        tone = [int(i) for i in tone.split(" ")]
+        word2ph = [int(i) for i in word2ph.split(" ")]
+        word2ph = [i for i in word2ph]
+        phone, tone, language = cleaned_text_to_sequence(phone, tone, language_str)
+
+        if add_blank:
+            phone = commons.intersperse(phone, 0)
+            tone = commons.intersperse(tone, 0)
+            language = commons.intersperse(language, 0)
+            for i in range(len(word2ph)):
+                word2ph[i] = word2ph[i] * 2
+            word2ph[0] += 1
+
+        bert_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".bert.pt")
+
+        # try:
+        #     bert = torch.load(bert_path)
+        #     assert bert.shape[-1] == len(phone)
+        # except Exception:
+        #     bert = get_bert(text, word2ph, language_str, device)
+        #     assert bert.shape[-1] == len(phone)
+        #     torch.save(bert, bert_path)
+
+        bert = get_bert(text, word2ph, language_str, device)
+        assert bert.shape[-1] == len(phone)
+        torch.save(bert, bert_path)
+    process_line(config_path)
+
