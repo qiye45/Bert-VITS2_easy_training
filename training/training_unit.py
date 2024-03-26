@@ -21,14 +21,14 @@ import os
 
 
 # 第一步：生成配置文件
+def get_path(data_dir):
+    start_path = os.path.join("data", data_dir)
+    lbl_path = os.path.join(start_path, "esd.list")
+    train_path = os.path.join(start_path, "train.list")
+    val_path = os.path.join(start_path, "val.list")
+    config_path = os.path.join(start_path, "config.json")
+    return start_path, lbl_path, train_path, val_path, config_path
 def generate_config(data_dir, batch_size):
-    def get_path(data_dir):
-        start_path = os.path.join("data", data_dir)
-        lbl_path = os.path.join(start_path, "esd.list")
-        train_path = os.path.join(start_path, "train.list")
-        val_path = os.path.join(start_path, "val.list")
-        config_path = os.path.join(start_path, "config.json")
-        return start_path, lbl_path, train_path, val_path, config_path
 
     assert data_dir != "", "数据集名称不能为空"
     start_path, _, train_path, val_path, config_path = get_path(data_dir)
@@ -216,16 +216,28 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
 
 
 # 第三步：预处理标签文件, 数据预处理函数，用于生成训练集和验证集
-
+def preprocess_text(data_dir):
+    assert data_dir != "", "数据集名称不能为空"
+    start_path, lbl_path, train_path, val_path, config_path = get_path(data_dir)
+    lines = open(lbl_path, "r", encoding="utf-8").readlines()
+    with open(lbl_path, "w", encoding="utf-8") as f:
+        for line in lines:
+            path, spk, language, text = line.strip().split("|")
+            path = os.path.join(start_path, "wavs", os.path.basename(path)).replace(
+                "\\", "/"
+            )
+            f.writelines(f"{path}|{spk}|{language}|{text}\n")
+    preprocess_text(lbl_path,train_path,val_path,config_path)
+    print("标签文件预处理完成")
 def preprocess_data(
         transcription_path: str,
-        cleaned_path: Optional[str],
         train_path: str,
         val_path: str,
         config_path: str,
         val_per_lang: int,
         max_val_total: int,
-        clean: bool
+        clean: bool,
+        cleaned_path: Optional[str],
 ):
     # 假设这是一个文本清洗函数，你需要根据实际情况来实现它
     def clean_text(text, language):
