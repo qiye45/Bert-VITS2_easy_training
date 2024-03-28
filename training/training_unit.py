@@ -344,6 +344,7 @@ def bert_gen(data_dir="config_file_path.yaml"):
                 pass
 
     print(f"BERT generation complete, {len(lines)} .bert.pt files created!")
+
 def process_line(line, add_blank):
     device = config.bert_gen_config.device
     if config.bert_gen_config.use_multi_device:
