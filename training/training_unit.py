@@ -33,8 +33,9 @@ def get_path(data_dir):
     val_path = os.path.join(start_path, "val.list")
     config_path = os.path.join(start_path, "config.json")
     return start_path, lbl_path, train_path, val_path, config_path
-def generate_config(data_dir, batch_size):
 
+
+def generate_config(data_dir, batch_size):
     assert data_dir != "", "数据集名称不能为空"
     start_path, _, train_path, val_path, config_path = get_path(data_dir)
     os.makedirs(start_path, exist_ok=True)
@@ -232,8 +233,10 @@ def preprocess_text(data_dir):
                 "\\", "/"
             )
             f.writelines(f"{path}|{spk}|{language}|{text}\n")
-    preprocess_data(lbl_path,train_path,val_path,config_path)
+    preprocess_data(lbl_path, train_path, val_path, config_path)
     print("标签文件预处理完成")
+
+
 def preprocess_data(
         transcription_path: str,
         train_path: str,
@@ -244,7 +247,6 @@ def preprocess_data(
         clean=True,
         cleaned_path='',
 ):
-
     def clean_text(text, language):
         # 返回清洗后的文本、音素、声调和词到音素的映射
         norm_text = chinese.text_normalize(text)
@@ -320,48 +322,63 @@ def preprocess_data(
 
 
 # 第四步：生成 BERT 特征文件
-def bert_gen(data_dir):
-    assert data_dir != "", "数据集名称不能为空"
-    _, _, _, _, config_path = get_path(data_dir)
+def bert_gen(data_dir="config_file_path.yaml"):
+    # Example of using the function
+    config = utils.get_hparams_from_file(data_dir)
+    training_files, validation_files, add_blank, num_processes = (
+        config.data.training_files,
+        config.data.validation_files,
+        config.data.add_blank,
+        config.bert_gen_config.num_processes
+    )
+    lines = []
+    with open(training_files, encoding="utf-8") as f:
+        lines.extend(f.readlines())
+    with open(validation_files, encoding="utf-8") as f:
+        lines.extend(f.readlines())
+    add_blanks = [add_blank] * len(lines)
 
-    def process_line(x):
-        line, add_blank = x
-        device = config.bert_gen_config.device
-        if config.bert_gen_config.use_multi_device:
-            rank = mp.current_process()._identity
-            rank = rank[0] if len(rank) > 0 else 0
-            if torch.cuda.is_available():
-                gpu_id = rank % torch.cuda.device_count()
-                device = torch.device(f"cuda:{gpu_id}")
-            else:
-                device = torch.device("cpu")
-        wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
-        phone = phones.split(" ")
-        tone = [int(i) for i in tone.split(" ")]
-        word2ph = [int(i) for i in word2ph.split(" ")]
-        word2ph = [i for i in word2ph]
-        phone, tone, language = cleaned_text_to_sequence(phone, tone, language_str)
+    if lines:
+        with Pool(processes=num_processes) as pool:
+            for _ in tqdm(pool.imap_unordered(process_line, zip(lines, add_blanks)), total=len(lines)):
+                pass
 
-        if add_blank:
-            phone = commons.intersperse(phone, 0)
-            tone = commons.intersperse(tone, 0)
-            language = commons.intersperse(language, 0)
-            for i in range(len(word2ph)):
-                word2ph[i] = word2ph[i] * 2
-            word2ph[0] += 1
+    print(f"BERT generation complete, {len(lines)} .bert.pt files created!")
+def process_line(line, add_blank):
+    device = config.bert_gen_config.device
+    if config.bert_gen_config.use_multi_device:
+        rank = mp.current_process()._identity
+        rank = rank[0] if len(rank) > 0 else 0
+        if torch.cuda.is_available():
+            gpu_id = rank % torch.cuda.device_count()
+            device = torch.device(f"cuda:{gpu_id}")
+        else:
+            device = torch.device("cpu")
+    wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
+    phone = phones.split(" ")
+    tone = [int(i) for i in tone.split(" ")]
+    word2ph = [int(i) for i in word2ph.split(" ")]
+    word2ph = [i for i in word2ph]
+    phone, tone, language = cleaned_text_to_sequence(phone, tone, language_str)
 
-        bert_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".bert.pt")
+    if add_blank:
+        phone = commons.intersperse(phone, 0)
+        tone = commons.intersperse(tone, 0)
+        language = commons.intersperse(language, 0)
+        for i in range(len(word2ph)):
+            word2ph[i] = word2ph[i] * 2
+        word2ph[0] += 1
 
-        # try:
-        #     bert = torch.load(bert_path)
-        #     assert bert.shape[-1] == len(phone)
-        # except Exception:
-        #     bert = get_bert(text, word2ph, language_str, device)
-        #     assert bert.shape[-1] == len(phone)
-        #     torch.save(bert, bert_path)
+    bert_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".bert.pt")
 
-        bert = get_bert(text, word2ph, language_str, device)
-        assert bert.shape[-1] == len(phone)
-        torch.save(bert, bert_path)
-    process_line(config_path)
+    # try:
+    #     bert = torch.load(bert_path)
+    #     assert bert.shape[-1] == len(phone)
+    # except Exception:
+    #     bert = get_bert(text, word2ph, language_str, device)
+    #     assert bert.shape[-1] == len(phone)
+    #     torch.save(bert, bert_path)
 
+    bert = get_bert(text, word2ph, language_str, device)
+    assert bert.shape[-1] == len(phone)
+    torch.save(bert, bert_path)
