@@ -15,7 +15,7 @@ project_name = 'yuanshen'
 # )
 
 # 第三步：预处理标签文件
-training_unit.preprocess_text(project_name)
+# training_unit.preprocess_text(project_name)
 
 # 第四步：生成 BERT 特征文件
 training_unit.bert_gen(project_name)

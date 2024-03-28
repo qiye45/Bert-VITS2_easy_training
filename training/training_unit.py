@@ -322,14 +322,14 @@ def preprocess_data(
 
 
 # 第四步：生成 BERT 特征文件
-def bert_gen(data_dir="config_file_path.yaml"):
-    # Example of using the function
-    config = utils.get_hparams_from_file(data_dir)
-    training_files, validation_files, add_blank, num_processes = (
+def bert_gen(data_dir, num_processes=2):
+    start_path, _, train_path, val_path, config_path = get_path(data_dir)
+
+    config = utils.get_hparams_from_file(config_path)
+    training_files, validation_files, add_blank = (
         config.data.training_files,
         config.data.validation_files,
-        config.data.add_blank,
-        config.bert_gen_config.num_processes
+        config.data.add_blank
     )
     lines = []
     with open(training_files, encoding="utf-8") as f:
@@ -339,11 +339,15 @@ def bert_gen(data_dir="config_file_path.yaml"):
     add_blanks = [add_blank] * len(lines)
 
     if lines:
-        with Pool(processes=num_processes) as pool:
-            for _ in tqdm(pool.imap_unordered(process_line, zip(lines, add_blanks)), total=len(lines)):
-                pass
+        # 多接触
+        # with Pool(processes=num_processes) as pool:
+        #     for _ in tqdm(pool.imap_unordered(process_line, zip(lines, add_blanks)), total=len(lines)):
+        #         pass
+        for line in lines:
+            process_line(line, add_blank)
 
     print(f"BERT generation complete, {len(lines)} .bert.pt files created!")
+
 
 def process_line(line, add_blank):
     device = config.bert_gen_config.device
