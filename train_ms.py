@@ -2,6 +2,7 @@
 import platform
 import os
 import torch
+from torch._C._distributed_c10d import TCPStore
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -78,11 +79,21 @@ def run():
     backend = "nccl"
     if platform.system() == "Windows":
         backend = "gloo"  # If Windows,switch to gloo backend.
+    print('backend',backend)
+    store = TCPStore("localhost", 0, 1, True, datetime.timedelta(seconds=30))
     dist.init_process_group(
         backend=backend,
-        init_method="env://",
-        timeout=datetime.timedelta(seconds=300),
-    )  # Use torchrun instead of mp.spawn
+        store=store,
+        rank=0,
+        world_size=1,
+        timeout=datetime.timedelta(seconds=3000),
+    )
+    # dist.init_process_group(
+    #     backend=backend,
+    #     init_method="env://",
+    #     timeout=datetime.timedelta(seconds=3000),
+    # )  # Use torchrun instead of mp.spawn
+
     rank = dist.get_rank()
     local_rank = int(os.environ["LOCAL_RANK"])
     n_gpus = dist.get_world_size()
