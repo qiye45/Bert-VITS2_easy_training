@@ -229,8 +229,7 @@ def preprocess_text(data_dir):
         for line in lines:
             path, spk, language, text = line.strip().split("|")
             path = os.path.join(start_path, "wavs", os.path.basename(path)).replace(
-                "\\", "/"
-            )
+                "\\", "/").replace(".WAV", ".wav").replace(".wav", ".bert.pt")
             f.writelines(f"{path}|{spk}|{language}|{text}\n")
     preprocess_data(lbl_path, train_path, val_path, config_path)
     print("标签文件预处理完成")
