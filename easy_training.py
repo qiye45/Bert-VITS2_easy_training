@@ -2,7 +2,7 @@ import os
 
 from training import training_unit
 
-project_name = 'yuanshen'
+project_name = 'yuanshen1'
 # 第一步：生成配置文件
 # training_unit.generate_config(project_name, 4)
 
@@ -18,7 +18,7 @@ project_name = 'yuanshen'
 # training_unit.preprocess_text(project_name)
 
 # 第四步：生成 BERT 特征文件
-training_unit.bert_gen(project_name)
+# training_unit.bert_gen(project_name)
 
-# 第五步：生成 CLAP 特征文件
+# 第五步：开始训练
 

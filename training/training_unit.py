@@ -48,9 +48,6 @@ def generate_config(data_dir, batch_size):
     config["data"]["validation_files"] = val_path
     config["train"]["batch_size"] = batch_size
 
-    model_path = os.path.join(start_path, "models")
-    if not os.path.isdir(model_path):
-        os.mkdir(model_path)
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
     if not os.path.exists("config.yml"):
@@ -60,6 +57,8 @@ def generate_config(data_dir, batch_size):
     wavs_path = os.path.join(start_path, "wavs")
     os.makedirs(raw_path, exist_ok=True)
     os.makedirs(wavs_path, exist_ok=True)
+    # 复制底模
+    shutil.copytree(os.path.join('filelists','models'),  os.path.join(start_path, 'models'))
 
     return "配置文件生成完成"
 
