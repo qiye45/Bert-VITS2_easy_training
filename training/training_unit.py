@@ -8,13 +8,15 @@ from typing import Optional
 import librosa
 import soundfile
 import yaml
+
+from funasr import AutoModel
 from modelscope import pipeline, Tasks
 import torch
 from multiprocessing import Pool
 import commons
 import utils
 from tqdm import tqdm
-from text import cleaned_text_to_sequence, get_bert,chinese
+from text import cleaned_text_to_sequence, get_bert, chinese
 import argparse
 import torch.multiprocessing as mp
 from .slicer2 import Slicer
@@ -55,7 +57,7 @@ def generate_config(data_dir, batch_size):
     os.makedirs(raw_path, exist_ok=True)
     os.makedirs(wavs_path, exist_ok=True)
     # 复制底模
-    shutil.copytree(os.path.join('filelists','models'),  os.path.join(start_path, 'models'))
+    shutil.copytree(os.path.join('filelists', 'models'), os.path.join(start_path, 'models'))
 
     return "配置文件生成完成"
 
@@ -128,7 +130,8 @@ def transcribe_audio_files(config_path, project_name):
     """
     in_dir = os.path.join('data', project_name, 'raws')
     output_path = os.path.join('data', project_name, 'esd.list')
-
+    temp_path = os.path.join('data', 'temp')
+    os.makedirs(temp_path,exist_ok=True)
     # 加载配置文件
     with open(config_path, mode="r", encoding="utf-8") as f:
         configyml = yaml.load(f, Loader=yaml.FullLoader)
@@ -150,18 +153,17 @@ def transcribe_audio_files(config_path, project_name):
     #     # lm_weight=0.15,
     #     # beam_size=10,
     # )
-    inference_pipeline = pipeline(
-        task=Tasks.auto_speech_recognition,
-        model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
-        cache_dir=local_dir_root, model_revision="v2.0.4")
-    param_dict = {'use_timestamp': False}
+    # inference_pipeline = pipeline(
+    #     task=Tasks.auto_speech_recognition,
+    #     model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
+    #     cache_dir=local_dir_root, model_revision="v2.0.4")
+    # param_dict = {'use_timestamp': False}
     # 使用AutoModel推理
-    # model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
-    #                   vad_model="fsmn-vad", vad_model_revision="v2.0.4",
-    #                   punc_model="ct-punc-c", punc_model_revision="v2.0.4",
-    #                   cache_dir=local_dir_root
-    #                   # spk_model="cam++", spk_model_revision="v2.0.2",
-    #                   )
+    model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
+                      vad_model="fsmn-vad", vad_model_revision="v2.0.4",
+                      punc_model="ct-punc-c", punc_model_revision="v2.0.4", local_dir=local_dir_root
+                      # spk_model="cam++", spk_model_revision="v2.0.2",
+                      )
 
     # 推理参数配置
     lang2token = {
@@ -184,11 +186,14 @@ def transcribe_audio_files(config_path, project_name):
     for audio_path in Path(in_dir).rglob('*.wav'):
         speaker_name = audio_path.parent.name
         # try:
-        # 进行语音识别
-        rec_result = inference_pipeline(input=str(audio_path), param_dict=param_dict)
-        lang, text = "zh", rec_result["text"]
-        # rec_result = model.generate(input=audio_path)
-        # lang, text = "zh", ''.join([i['text'] for i in rec_result])
+        # 进行语音识别，先复制到temp目录中，防止中文路径乱码
+        new_audio_path = os.path.join(temp_path, audio_path.name)
+        shutil.copy(audio_path, new_audio_path)
+        # rec_result = inference_pipeline(input=str(audio_path), param_dict=param_dict)
+        # lang, text = "zh", rec_result["text"]
+
+        rec_result = model.generate(input=new_audio_path)
+        lang, text = "zh", ''.join([i['text'] for i in rec_result])
 
         # 获取识别文本和语种
         if lang not in lang2token:
