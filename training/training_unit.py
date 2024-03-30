@@ -7,8 +7,6 @@ from random import shuffle
 from typing import Optional
 import librosa
 import soundfile
-from funasr import AutoModel
-import torchaudio
 import yaml
 from modelscope import pipeline, Tasks
 import torch
@@ -16,13 +14,12 @@ from multiprocessing import Pool
 import commons
 import utils
 from tqdm import tqdm
-from text import cleaned_text_to_sequence, get_bert
+from text import cleaned_text_to_sequence, get_bert,chinese
 import argparse
 import torch.multiprocessing as mp
 from .slicer2 import Slicer
 from config import config
 import sys
-from text import chinese, cleaned_text_to_sequence
 
 
 # 第一步：生成配置文件
@@ -119,7 +116,7 @@ def split_audios(config_path, data_dir):
 
 
 # 第二步：预处理音频文件
-def transcribe_audio_files(config_path, project_name, in_dir, output_path):
+def transcribe_audio_files(config_path, project_name):
     """
     遍历指定文件夹中的 .wav 音频文件，进行语音识别，然后将转写结果写入文件。
 
@@ -129,6 +126,8 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
     in_dir: 包含音频文件的输入目录。
     output_path: 转写结果输出文件的路径。
     """
+    in_dir = os.path.join('data', project_name, 'raws')
+    output_path = os.path.join('data', project_name, 'esd.list')
 
     # 加载配置文件
     with open(config_path, mode="r", encoding="utf-8") as f:
@@ -156,7 +155,7 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
         model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
         cache_dir=local_dir_root, model_revision="v2.0.4")
     param_dict = {'use_timestamp': False}
-
+    # 使用AutoModel推理
     # model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
     #                   vad_model="fsmn-vad", vad_model_revision="v2.0.4",
     #                   punc_model="ct-punc-c", punc_model_revision="v2.0.4",
@@ -176,40 +175,61 @@ def transcribe_audio_files(config_path, project_name, in_dir, output_path):
 
     # 初始化转写结果列表
     total_files = 0
-    for p in Path(in_dir).iterdir():
-        for s in p.rglob('*.wav'):
-            total_files += 1
+    for wav_file in Path(in_dir).rglob('*.wav'):  # 使用.rglob()方法递归搜索
+        total_files += 1  # 对每个找到的.wav文件增加计数
+
     speaker_annos = []
-
+    print('音频文件数量：', total_files)
     # 迭代输入目录中的所有 wav 文件
-    for p in Path(in_dir).iterdir():
-        for s in p.rglob('*.wav'):
-            root = os.path.join(*s.parts[:-1])
-            filename = s.name
-            speaker_name = s.parts[-2]
-            try:
-                # 构建完整的音频文件路径
-                audio_path = os.path.join(root, filename)
-                # 进行语音识别
-                rec_result = inference_pipeline(input=audio_path, param_dict=param_dict)
-                lang, text = "zh", rec_result["text"]
+    for audio_path in Path(in_dir).rglob('*.wav'):
+        speaker_name = audio_path.parent.name
+        # try:
+        # 进行语音识别
+        rec_result = inference_pipeline(input=str(audio_path), param_dict=param_dict)
+        lang, text = "zh", rec_result["text"]
+        # rec_result = model.generate(input=audio_path)
+        # lang, text = "zh", ''.join([i['text'] for i in rec_result])
 
-                # rec_result = model.generate(input=audio_path)
-                # lang, text = "zh", ''.join([i['text'] for i in rec_result])
-
-                # 获取识别文本和语种
-
-                if lang not in lang2token:
-                    print(f"{lang} 语言不支持，忽略")
-                    continue
-                # 构造输出文本行
-                text_line = f"{audio_path}|{speaker_name}|{lang2token[lang]}{text.strip()}\n"
-                # 添加到转写结果列表
-                speaker_annos.append(text_line)
-                processed_files += 1
-                print(f"已处理: {processed_files}/{total_files}")
-            except Exception as e:
-                print(e)
+        # 获取识别文本和语种
+        if lang not in lang2token:
+            print(f"{lang} 语言不支持，忽略")
+            continue
+        # 构造输出文本行
+        text_line = f"{audio_path}|{speaker_name}|{lang2token[lang]}{text.strip()}\n"
+        # 添加到转写结果列表
+        speaker_annos.append(text_line)
+        processed_files += 1
+        print(f"已处理: {processed_files}/{total_files}")
+        # except Exception as e:
+        #     print('error:',audio_path,e)
+    # for p in Path(in_dir).iterdir():
+    #     for s in p.rglob('*.wav'):
+    #         root = os.path.join(*s.parts[:-1])
+    #         filename = s.name
+    #         speaker_name = s.parts[-2]
+    #         try:
+    #             # 构建完整的音频文件路径
+    #             audio_path = os.path.join(root, filename)
+    #             # 进行语音识别
+    #             rec_result = inference_pipeline(input=audio_path, param_dict=param_dict)
+    #             lang, text = "zh", rec_result["text"]
+    #
+    #             # rec_result = model.generate(input=audio_path)
+    #             # lang, text = "zh", ''.join([i['text'] for i in rec_result])
+    #
+    #             # 获取识别文本和语种
+    #
+    #             if lang not in lang2token:
+    #                 print(f"{lang} 语言不支持，忽略")
+    #                 continue
+    #             # 构造输出文本行
+    #             text_line = f"{audio_path}|{speaker_name}|{lang2token[lang]}{text.strip()}\n"
+    #             # 添加到转写结果列表
+    #             speaker_annos.append(text_line)
+    #             processed_files += 1
+    #             print(f"已处理: {processed_files}/{total_files}")
+    #         except Exception as e:
+    #             print(e)
 
     # 如果发现转写文本，写入输出文件
     if speaker_annos:
