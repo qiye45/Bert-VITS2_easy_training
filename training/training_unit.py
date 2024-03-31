@@ -22,6 +22,7 @@ from clap_wrapper import get_clap_audio_feature
 from config import config
 import sys
 from pypinyin import lazy_pinyin
+from infer import latest_version
 
 
 # from modelscope import pipeline, Tasks
@@ -82,10 +83,10 @@ def split_audios(config_path, data_dir):
     # 读取音频文件
     for p in Path(data_dir).iterdir():
         for s in p.rglob('*.wav'):
+            print('音频切片：', s)
             root = os.path.join(*s.parts[:-1])
             filename = s.name
             filename = filename[:filename.rindex('.')]  # 去后缀
-
             # 构建完整的音频文件路径
             audio_path = str(s)
             audio, sr = librosa.load(audio_path, sr=None, mono=False)
@@ -113,17 +114,35 @@ def split_audios(config_path, data_dir):
                 if len(chunk) / sr > 1:
                     soundfile.write(os.path.join(output_dir, f'{filename}_{i}.wav'), chunk, sr)
                 else:
-                    print(f"音频片段 {filename}_{i}.wav 时长低于2秒，已丢弃。")
+                    print(f"音频片段 {filename}_{i}.wav 时长低于1秒，已丢弃。")
             # 删除原始音频文件
             if os.path.exists(audio_path):
                 os.remove(audio_path)
                 print(f"原始音频文件 {audio_path} 已被删除。")
 
 
+def resample(in_dir, out_dir, sr=44100):
+    """
+    重采样音频文件。
+
+    参数:
+    in_dir: 包含音频文件的输入目录。
+    out_dir: 输出目录。
+    sr: 重采样后的采样率。
+    """
+    for audio_path in Path(in_dir).rglob('*.wav'):
+
+        wav_path = os.path.join(audio_path)
+        if os.path.exists(wav_path) and wav_path.lower().endswith(".wav"):
+            print('重采样：', wav_path)
+            wav, sr = librosa.load(wav_path, sr=sr)
+            soundfile.write(wav_path, wav, sr)
+
+
 # 第二步：预处理音频文件
 def transcribe_audio_files(config_path, project_name):
     """
-    遍历指定文件夹中的 .wav 音频文件，进行语音识别，然后将转写结果写入文件。
+    遍历指定文件夹中的 .wav 音频文件，重采样44100，进行语音识别，然后将转写结果写入文件。
 
     参数:
     config_path: 配置文件的路径。
@@ -145,10 +164,16 @@ def transcribe_audio_files(config_path, project_name):
         if os.path.isdir(os.path.join(in_dir, dir_name)):  # 确保是文件夹
             pinyin_name = ''.join(lazy_pinyin(dir_name))
             mapping_dict[pinyin_name] = dir_name
+            # 如果中文名和拼音名相同，跳过
+            if dir_name == pinyin_name:
+                continue
             os.rename(os.path.join(in_dir, dir_name), os.path.join(in_dir, pinyin_name))
-
+    # 音频重采样
+    resample(in_dir, in_dir)
+    print('音频重采样完成')
     # 切分音频
-    # split_audios(config_path, os.path.join('data', project_name))
+    split_audios(config_path, in_dir)
+    print('切分音频完成')
 
     # 根据模型名称构建模型目录路径
     local_dir_root = "./models_from_modelscope"
@@ -286,7 +311,8 @@ def preprocess_data(
                             )
                         )
                     except Exception as e:
-                        print(f"在清洗文本时发生错误：{e}")
+                        print(line)
+                        print(f"生成训练集和验证集时发生错误！, 详细信息:\n{e}")
 
     transcription_path = cleaned_path
     spk_utt_map = defaultdict(list)
@@ -297,7 +323,7 @@ def preprocess_data(
         for line in f.readlines():
             utt, spk, language, text, phones, tones, word2ph = line.strip().split("|")
             spk_utt_map[language].append(line)
-            if spk not in spk_id_map:
+            if spk not in spk_id_map.keys():
                 spk_id_map[spk] = current_sid
                 current_sid += 1
 
@@ -325,6 +351,11 @@ def preprocess_data(
     json_config = json.load(open(config_path, encoding="utf-8"))
     json_config["data"]["spk2id"] = spk_id_map
     json_config["data"]["n_speakers"] = len(spk_id_map)
+    # 新增写入：写入训练版本、数据集路径
+    json_config["version"] = latest_version
+    json_config["data"]["training_files"] = os.path.normpath(train_path).replace("\\", "/")
+    json_config["data"]["validation_files"] = os.path.normpath(val_path).replace("\\", "/")
+
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(json_config, f, indent=2, ensure_ascii=False)
 
@@ -389,14 +420,6 @@ def process_line_bert(line, add_blank):
         word2ph[0] += 1
 
     bert_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".bert.pt")
-
-    # try:
-    #     bert = torch.load(bert_path)
-    #     assert bert.shape[-1] == len(phone)
-    # except Exception:
-    #     bert = get_bert(text, word2ph, language_str, device)
-    #     assert bert.shape[-1] == len(phone)
-    #     torch.save(bert, bert_path)
 
     bert = get_bert(text, word2ph, language_str, device)
     assert bert.shape[-1] == len(phone)

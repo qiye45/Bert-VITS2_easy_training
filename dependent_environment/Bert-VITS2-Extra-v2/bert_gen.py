@@ -66,8 +66,8 @@ if __name__ == "__main__":
         num_processes = args.num_processes
         with Pool(processes=num_processes) as pool:
             for _ in tqdm(
-                pool.imap_unordered(process_line, zip(lines, add_blank)),
-                total=len(lines),
+                    pool.imap_unordered(process_line, zip(lines, add_blank)),
+                    total=len(lines),
             ):
                 # 这里是缩进的代码块，表示循环体
                 pass  # 使用pass语句作为占位符
