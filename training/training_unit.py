@@ -8,9 +8,7 @@ from typing import Optional
 import librosa
 import soundfile
 import yaml
-
 from funasr import AutoModel
-from modelscope import pipeline, Tasks
 import torch
 from multiprocessing import Pool
 import commons
@@ -20,8 +18,13 @@ from text import cleaned_text_to_sequence, get_bert, chinese
 import argparse
 import torch.multiprocessing as mp
 from .slicer2 import Slicer
+from clap_wrapper import get_clap_audio_feature
 from config import config
 import sys
+from pypinyin import lazy_pinyin
+
+
+# from modelscope import pipeline, Tasks
 
 
 # 第一步：生成配置文件
@@ -131,11 +134,19 @@ def transcribe_audio_files(config_path, project_name):
     in_dir = os.path.join('data', project_name, 'raws')
     output_path = os.path.join('data', project_name, 'esd.list')
     temp_path = os.path.join('data', 'temp')
-    os.makedirs(temp_path,exist_ok=True)
+    os.makedirs(temp_path, exist_ok=True)
     # 加载配置文件
     with open(config_path, mode="r", encoding="utf-8") as f:
         configyml = yaml.load(f, Loader=yaml.FullLoader)
     model_name = configyml["dataset_path"].replace("data/", "")
+    # 如果in_dir文件夹有中文，修改文件夹名成拼音，并保存映射关系
+    mapping_dict = {}
+    for dir_name in os.listdir(in_dir):
+        if os.path.isdir(os.path.join(in_dir, dir_name)):  # 确保是文件夹
+            pinyin_name = ''.join(lazy_pinyin(dir_name))
+            mapping_dict[pinyin_name] = dir_name
+            os.rename(os.path.join(in_dir, dir_name), os.path.join(in_dir, pinyin_name))
+
     # 切分音频
     # split_audios(config_path, os.path.join('data', project_name))
 
@@ -184,7 +195,7 @@ def transcribe_audio_files(config_path, project_name):
     print('音频文件数量：', total_files)
     # 迭代输入目录中的所有 wav 文件
     for audio_path in Path(in_dir).rglob('*.wav'):
-        speaker_name = audio_path.parent.name
+        speaker_name = mapping_dict[audio_path.parent.name]
         # try:
         # 进行语音识别，先复制到temp目录中，防止中文路径乱码
         new_audio_path = os.path.join(temp_path, audio_path.name)
@@ -207,34 +218,6 @@ def transcribe_audio_files(config_path, project_name):
         print(f"已处理: {processed_files}/{total_files}")
         # except Exception as e:
         #     print('error:',audio_path,e)
-    # for p in Path(in_dir).iterdir():
-    #     for s in p.rglob('*.wav'):
-    #         root = os.path.join(*s.parts[:-1])
-    #         filename = s.name
-    #         speaker_name = s.parts[-2]
-    #         try:
-    #             # 构建完整的音频文件路径
-    #             audio_path = os.path.join(root, filename)
-    #             # 进行语音识别
-    #             rec_result = inference_pipeline(input=audio_path, param_dict=param_dict)
-    #             lang, text = "zh", rec_result["text"]
-    #
-    #             # rec_result = model.generate(input=audio_path)
-    #             # lang, text = "zh", ''.join([i['text'] for i in rec_result])
-    #
-    #             # 获取识别文本和语种
-    #
-    #             if lang not in lang2token:
-    #                 print(f"{lang} 语言不支持，忽略")
-    #                 continue
-    #             # 构造输出文本行
-    #             text_line = f"{audio_path}|{speaker_name}|{lang2token[lang]}{text.strip()}\n"
-    #             # 添加到转写结果列表
-    #             speaker_annos.append(text_line)
-    #             processed_files += 1
-    #             print(f"已处理: {processed_files}/{total_files}")
-    #         except Exception as e:
-    #             print(e)
 
     # 如果发现转写文本，写入输出文件
     if speaker_annos:
@@ -253,8 +236,12 @@ def preprocess_text(data_dir):
     with open(lbl_path, "w", encoding="utf-8") as f:
         for line in lines:
             path, spk, language, text = line.strip().split("|")
-            path = os.path.join(start_path, "wavs", os.path.basename(path)).replace(
-                "\\", "/").replace(".WAV", ".wav").replace(".wav", ".bert.pt")
+            path = path.replace("\\", "/")
+            spk_path = path.split("/")[-2]
+            # 放到角色文件夹
+            os.makedirs(os.path.join(start_path, "wavs", spk_path), exist_ok=True)
+            shutil.copy(path, os.path.join(start_path, "wavs", spk_path))
+            path = os.path.join(start_path, "wavs", spk_path, os.path.basename(path))
             f.writelines(f"{path}|{spk}|{language}|{text}\n")
     preprocess_data(lbl_path, train_path, val_path, config_path)
     print("标签文件预处理完成")
@@ -362,17 +349,18 @@ def bert_gen(data_dir, num_processes=2):
     add_blanks = [add_blank] * len(lines)
 
     if lines:
-        # 多接触
+        # 多进程
         # with Pool(processes=num_processes) as pool:
-        #     for _ in tqdm(pool.imap_unordered(process_line, zip(lines, add_blanks)), total=len(lines)):
+        #     for _ in tqdm(pool.imap_unordered(process_line_bert, zip(lines, add_blanks)), total=len(lines)):
         #         pass
         for line in lines:
-            process_line(line, add_blank)
+            process_line_bert(line, add_blank)
+            process_line_clap(line)
 
     print(f"BERT generation complete, {len(lines)} .bert.pt files created!")
 
 
-def process_line(line, add_blank):
+def process_line_bert(line, add_blank):
     device = config.bert_gen_config.device
     if config.bert_gen_config.use_multi_device:
         rank = mp.current_process()._identity
@@ -383,6 +371,9 @@ def process_line(line, add_blank):
         else:
             device = torch.device("cpu")
     wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
+    # 创建目录
+    os.makedirs(os.path.dirname(wav_path), exist_ok=True)
+
     phone = phones.split(" ")
     tone = [int(i) for i in tone.split(" ")]
     word2ph = [int(i) for i in word2ph.split(" ")]
@@ -410,3 +401,46 @@ def process_line(line, add_blank):
     bert = get_bert(text, word2ph, language_str, device)
     assert bert.shape[-1] == len(phone)
     torch.save(bert, bert_path)
+
+
+def process_line_clap(line):
+    device = config.emo_gen_config.device
+    if config.emo_gen_config.use_multi_device:
+        rank = mp.current_process()._identity
+        rank = rank[0] if len(rank) > 0 else 0
+        if torch.cuda.is_available():
+            gpu_id = rank % torch.cuda.device_count()
+            device = torch.device(f"cuda:{gpu_id}")
+        else:
+            device = torch.device("cpu")
+    wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
+
+    clap_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".emo.pt")
+    if os.path.isfile(clap_path):
+        return
+
+    audio = librosa.load(wav_path)[0]
+    # audio = librosa.resample(audio, 44100, 48000)
+
+    clap = get_clap_audio_feature(audio, device)
+    torch.save(clap, clap_path)
+
+
+# 第五步：训练
+def fit_linux(data_dir):
+    '''
+    修改文件的\\到/，适配Linux训练
+    '''
+    start_path, _, train_path, val_path, config_path = get_path(data_dir)
+    for root, ds, fs in os.walk(start_path):
+        for f in fs:
+            fullname = os.path.join(root, f)
+            if fullname.endswith(".json") or fullname.endswith(".list"):
+                # 修改文件的\\到/
+                print('Modify file：', fullname)
+                file = open(fullname, 'r', encoding='utf-8')
+                file_content = file.read()
+                file.close()
+                file = open(fullname, 'w', encoding='utf-8')
+                file.write(file_content.replace('\\', '/'))
+                file.close()

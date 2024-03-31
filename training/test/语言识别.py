@@ -1,5 +1,8 @@
 from funasr import AutoModel
+import torch
 
+print(torch.__version__)
+print(torch.cuda.is_available())
 # paraformer-zh is a multi-functional asr model
 # use vad, punc, spk or not as you need
 # 下载链接：https://www.modelscope.cn/models/iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/summary
