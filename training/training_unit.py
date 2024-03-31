@@ -194,7 +194,7 @@ def transcribe_audio_files(config_path, project_name):
     #     model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
     #     cache_dir=local_dir_root, model_revision="v2.0.4")
     # param_dict = {'use_timestamp': False}
-    # 使用AutoModel推理
+    # 使用AutoModel推理，单进程需要5g显存左右
     model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
                       vad_model="fsmn-vad", vad_model_revision="v2.0.4",
                       punc_model="ct-punc-c", punc_model_revision="v2.0.4", local_dir=local_dir_root
@@ -330,15 +330,25 @@ def preprocess_data(
     train_list = []
     val_list = []
 
+    # 原始训练集和测试集划分
+    # for spk, utts in spk_utt_map.items():
+    #     shuffle(utts)
+    #     val_list += utts[:val_per_lang]
+    #     train_list += utts[val_per_lang:]
+    # shuffle(val_list)
+    # if len(val_list) > max_val_total:
+    #     train_list += val_list[max_val_total:]
+    #     val_list = val_list[:max_val_total]
+
+    # 训练集和测试集划分
     for spk, utts in spk_utt_map.items():
         shuffle(utts)
-        val_list += utts[:val_per_lang]
-        train_list += utts[val_per_lang:]
+        split_point = int(len(utts) * 0.9)  # 计算90%数据的切分点
+        train_list += utts[:split_point]  # 前90%数据作为训练集
+        val_list += utts[split_point:]  # 后10%数据作为测试集
 
-    shuffle(val_list)
-    if len(val_list) > max_val_total:
-        train_list += val_list[max_val_total:]
-        val_list = val_list[:max_val_total]
+    shuffle(train_list)  # 如果需要，可以洗牌训练集
+    shuffle(val_list)  # 如果需要，可以洗牌测试集
 
     with open(train_path, "w", encoding="utf-8") as f:
         for line in train_list:
@@ -378,17 +388,24 @@ def bert_gen(data_dir, num_processes=2):
     with open(validation_files, encoding="utf-8") as f:
         lines.extend(f.readlines())
     add_blanks = [add_blank] * len(lines)
-
+    total = len(lines)
+    count = 0
     if lines:
         # 多进程
         # with Pool(processes=num_processes) as pool:
         #     for _ in tqdm(pool.imap_unordered(process_line_bert, zip(lines, add_blanks)), total=len(lines)):
         #         pass
         for line in lines:
-            process_line_bert(line, add_blank)
-            process_line_clap(line)
+            try:
+                process_line_bert(line, add_blank)
+                process_line_clap(line)
 
-    print(f"BERT generation complete, {len(lines)} .bert.pt files created!")
+            except Exception as e:
+                print('生成bert特征时出错：', line.split('|')[0], e)
+            count += 1
+            if count % 100 == 0:
+                print('bert特征文件已处理：%s/%s' % (count, total))
+    print(f"BERT generation complete, {total} .bert.pt files created!")
 
 
 def process_line_bert(line, add_blank):
