@@ -23,6 +23,7 @@ from config import config
 import sys
 from pypinyin import lazy_pinyin
 from infer import latest_version
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 # from modelscope import pipeline, Tasks
@@ -65,6 +66,8 @@ def generate_config(data_dir, batch_size):
 
     return "配置文件生成完成"
 
+
+# 第二步：预处理音频文件
 
 # 音频切分 方案1
 def split_audios(config_path, data_dir):
@@ -139,8 +142,40 @@ def resample(in_dir, out_dir, sr=44100):
             soundfile.write(wav_path, wav, sr)
 
 
-# 第二步：预处理音频文件
-def transcribe_audio_files(config_path, project_name):
+
+def init_model():
+    # 在这里初始化模型，这个函数将被调用来确保每个进程都有自己的模型实例
+    # 根据模型名称构建模型目录路径
+    local_dir_root = "./models_from_modelscope"
+    # model_dir = snapshot_download('damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
+    #                               cache_dir=local_dir_root)
+    # inference_pipeline = pipeline(
+    #     task=Tasks.auto_speech_recognition,
+    #     model=model_dir,
+    #     vad_model='damo/speech_fsmn_vad_zh-cn-16k-common-pytorch',
+    #     punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch',
+    #     cache_dir=local_dir_root
+    #     # lm_model='damo/speech_transformer_lm_zh-cn-common-vocab8404-pytorch',
+    #     # lm_weight=0.15,
+    #     # beam_size=10,
+    # )
+    # inference_pipeline = pipeline(
+    #     task=Tasks.auto_speech_recognition,
+    #     model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
+    #     cache_dir=local_dir_root, model_revision="v2.0.4")
+    # param_dict = {'use_timestamp': False}
+
+    # 使用AutoModel推理，单进程需要5g显存左右
+    model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
+                      vad_model="fsmn-vad", vad_model_revision="v2.0.4",
+                      punc_model="ct-punc-c", punc_model_revision="v2.0.4", local_dir=local_dir_root
+                      # spk_model="cam++", spk_model_revision="v2.0.2",
+                      )
+
+    return model
+
+
+def transcribe_audio_files(config_path, project_name, num_processes=2):
     """
     遍历指定文件夹中的 .wav 音频文件，重采样44100，进行语音识别，然后将转写结果写入文件。
 
@@ -175,39 +210,14 @@ def transcribe_audio_files(config_path, project_name):
     split_audios(config_path, in_dir)
     print('切分音频完成')
 
-    # 根据模型名称构建模型目录路径
-    local_dir_root = "./models_from_modelscope"
-    # model_dir = snapshot_download('damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch',
-    #                               cache_dir=local_dir_root)
-    # inference_pipeline = pipeline(
-    #     task=Tasks.auto_speech_recognition,
-    #     model=model_dir,
-    #     vad_model='damo/speech_fsmn_vad_zh-cn-16k-common-pytorch',
-    #     punc_model='damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch',
-    #     cache_dir=local_dir_root
-    #     # lm_model='damo/speech_transformer_lm_zh-cn-common-vocab8404-pytorch',
-    #     # lm_weight=0.15,
-    #     # beam_size=10,
-    # )
-    # inference_pipeline = pipeline(
-    #     task=Tasks.auto_speech_recognition,
-    #     model='iic/speech_paraformer-large-vad-punc_asr_nat-en-16k-common-vocab10020', local_dir=local_dir_root,
-    #     cache_dir=local_dir_root, model_revision="v2.0.4")
-    # param_dict = {'use_timestamp': False}
-    # 使用AutoModel推理，单进程需要5g显存左右
-    model = AutoModel(model="paraformer-zh", model_revision="v2.0.4",
-                      vad_model="fsmn-vad", vad_model_revision="v2.0.4",
-                      punc_model="ct-punc-c", punc_model_revision="v2.0.4", local_dir=local_dir_root
-                      # spk_model="cam++", spk_model_revision="v2.0.2",
-                      )
+    # 初始化模型
+    model = init_model()
 
-    # 推理参数配置
     lang2token = {
         'zh': "ZH|",
         'ja': "JP|",
         "en": "EN|",
     }
-
     # 获取总文件数并初始化处理计数器
     processed_files = 0
 
@@ -222,13 +232,10 @@ def transcribe_audio_files(config_path, project_name):
     for audio_path in Path(in_dir).rglob('*.wav'):
         speaker_name = mapping_dict[audio_path.parent.name]
         # try:
-        # 进行语音识别，先复制到temp目录中，防止中文路径乱码
-        new_audio_path = os.path.join(temp_path, audio_path.name)
-        shutil.copy(audio_path, new_audio_path)
         # rec_result = inference_pipeline(input=str(audio_path), param_dict=param_dict)
         # lang, text = "zh", rec_result["text"]
 
-        rec_result = model.generate(input=new_audio_path)
+        rec_result = model.generate(input=audio_path)
         lang, text = "zh", ''.join([i['text'] for i in rec_result])
 
         # 获取识别文本和语种

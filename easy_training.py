@@ -1,15 +1,17 @@
 import os
-
 from training import training_unit
 
-project_name = 'live'
+
+
+project_name = 'yuanshen2'
 # 第一步：生成配置文件
 # training_unit.generate_config(project_name, 2)
 
 # 第二步：预处理音频文件
 training_unit.transcribe_audio_files(
     config_path='config.yml',
-    project_name=project_name
+    project_name=project_name,
+    num_processes=2
 )
 
 # 第三步：预处理标签文件
