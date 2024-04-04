@@ -142,7 +142,6 @@ def resample(in_dir, out_dir, sr=44100):
             soundfile.write(wav_path, wav, sr)
 
 
-
 def init_model():
     # 在这里初始化模型，这个函数将被调用来确保每个进程都有自己的模型实例
     # 根据模型名称构建模型目录路径
@@ -231,25 +230,29 @@ def transcribe_audio_files(config_path, project_name, num_processes=2):
     # 迭代输入目录中的所有 wav 文件
     for audio_path in Path(in_dir).rglob('*.wav'):
         speaker_name = mapping_dict[audio_path.parent.name]
-        # try:
-        # rec_result = inference_pipeline(input=str(audio_path), param_dict=param_dict)
-        # lang, text = "zh", rec_result["text"]
+        try:
+            # rec_result = inference_pipeline(input=str(audio_path), param_dict=param_dict)
+            # lang, text = "zh", rec_result["text"]
 
-        rec_result = model.generate(input=audio_path)
-        lang, text = "zh", ''.join([i['text'] for i in rec_result])
+            rec_result = model.generate(input=audio_path)
+            lang, text = "zh", ''.join([i['text'] for i in rec_result])
 
-        # 获取识别文本和语种
-        if lang not in lang2token:
-            print(f"{lang} 语言不支持，忽略")
-            continue
-        # 构造输出文本行
-        text_line = f"{audio_path}|{speaker_name}|{lang2token[lang]}{text.strip()}\n"
-        # 添加到转写结果列表
-        speaker_annos.append(text_line)
-        processed_files += 1
-        print(f"已处理: {processed_files}/{total_files}")
-        # except Exception as e:
-        #     print('error:',audio_path,e)
+            # 获取识别文本和语种
+            if lang not in lang2token:
+                print(f"{lang} 语言不支持，忽略")
+                continue
+            # 如果文本大于512，跳过
+            if len(text) > 512:
+                print(f"{audio_path}文本大于512，忽略文本")
+                continue
+            # 构造输出文本行
+            text_line = f"{audio_path}|{speaker_name}|{lang2token[lang]}{text.strip()}\n"
+            # 添加到转写结果列表
+            speaker_annos.append(text_line)
+            processed_files += 1
+            print(f"已处理: {processed_files}/{total_files}")
+        except Exception as e:
+            print('error:', audio_path, e)
 
     # 如果发现转写文本，写入输出文件
     if speaker_annos:
